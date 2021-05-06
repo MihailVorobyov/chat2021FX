@@ -1,5 +1,10 @@
 package server;
 
+
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -8,10 +13,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ConsoleServer {
+	// 1. Добавить на серверную сторону чата логирование, с выводом информации о действиях на сервере (запущен, произошла ошибка, клиент подключился, клиент прислал сообщение/команду).
+	private static final Logger LOGGER = LogManager.getLogger(ConsoleServer.class);
+
 	private Vector<ClientHandler> users;
 	private ExecutorService executorService;
 
 	public ConsoleServer() {
+		LOGGER.info("Try to start server");
 		users = new Vector<>();
 		ServerSocket server = null; // наша сторона
 		Socket socket = null; // удаленная (remote) сторона
@@ -25,49 +34,51 @@ public class ConsoleServer {
 		try {
 			AuthService.connect();
 			server = new ServerSocket(6001);
-			System.out.println("Server started");
+			LOGGER.info("Server started");
 
 			while (true) {
 				socket = server.accept();
-				System.out.printf("Client [%s] try to connect\n", socket.getInetAddress());
+				LOGGER.info(String.format("Client [%s] try to connect", socket.getInetAddress()));
 				new ClientHandler(this, socket);
 			}
 
 		} catch (IOException e) {
-			e.printStackTrace();
+			LOGGER.error(e.getMessage(), e);
 		} finally {
 
 			if (socket != null) {
 				try {
-					System.out.printf("Client [%s] disconnected", socket.getInetAddress());
+					LOGGER.info(String.format("Client [%s] disconnected", socket.getInetAddress()));
 					socket.close();
 				} catch (IOException e) {
-					e.printStackTrace();
+					LOGGER.error(e.getMessage(), e);
 				}
 			}
 
 			if (server != null) {
 				try {
+					LOGGER.info("Try to stop server...");
 					server.close();
 				} catch (IOException e) {
-					e.printStackTrace();
+					LOGGER.error(e.getMessage(), e);
 				}
 			}
 
 			AuthService.disconnect();
 			executorService.shutdown();
+			LOGGER.info("Server is stopped");
 		}
 	}
 
 	public void subscribe(ClientHandler client) {
 		users.add(client);
-		System.out.printf("User [%s] connected%n", client.getNickname());
+		LOGGER.info(String.format("User [%s] connected", client.getNickname()));
 		broadcastClientsList();
 	}
 
 	public void unsubscribe(ClientHandler client) {
 		users.remove(client);
-		System.out.printf("User [%s] disconnected%n", client.getNickname());
+		LOGGER.info(String.format("User [%s] disconnected", client.getNickname()));
 		broadcastClientsList();
 	}
 
@@ -75,6 +86,7 @@ public class ConsoleServer {
 		for (ClientHandler c : users) {
 			if (!c.checkBlackList(from.getNickname())) {
 				c.sendMsg(str);
+				LOGGER.info(str);
 			}
 		}
 	}
@@ -95,6 +107,7 @@ public class ConsoleServer {
 					if (!c.checkBlackList(nickFrom.getNickname())) {    // если чёрный список получателя НЕ
 						// содержит ник отправителя, то отправляем ему сообщение
 						c.sendMsg(nickFrom.getNickname() + ": [Send for " + nickTo + "] " + msg);
+						LOGGER.info(String.format("%s: [Send for %s] %s", nickFrom.getNickname(), nickTo, msg));
 					}
 					nickFrom.sendMsg(nickFrom.getNickname() + ": [Send for " + nickTo + "] " + msg);
 				}
@@ -114,6 +127,7 @@ public class ConsoleServer {
 		for (ClientHandler c : users) {
 			c.sendMsg(out);
 		}
+		LOGGER.info("sendMsg(" + out + ")");
 	}
 
 	public ExecutorService getExecutorService() {

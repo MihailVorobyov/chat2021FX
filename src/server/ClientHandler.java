@@ -1,5 +1,8 @@
 package server;
 
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -8,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ClientHandler {
+	private static final Logger LOGGER = LogManager.getLogger(ClientHandler.class);
 
 	private DataOutputStream out;
 	private DataInputStream in;
@@ -24,6 +28,7 @@ public class ClientHandler {
 			this.nickname = null;
 
 			server.getExecutorService().execute(() -> {
+				LOGGER.debug(String.format("Create new ClientHandler: socket = %s, run in %s", server, socket, Thread.currentThread().getName()));
 				boolean isExit = false;
 				try {
 					// отключение неавторизованных пользователей по таймауту
@@ -31,6 +36,7 @@ public class ClientHandler {
 					socket.setSoTimeout(120000);
 					while (true) {
 						String str = in.readUTF();
+						LOGGER.trace(String.format("IP: %s, in.readUTF() = %s", socket.getInetAddress(), str));
 						if (str.startsWith("/auth")){
 							String[] tokens = str.split(" ");
 							String nick = AuthService.getNicknameByLoginAndPass(tokens[1], tokens[2]);
@@ -73,12 +79,13 @@ public class ClientHandler {
 					if (!isExit) {
 						while (true) {
 							String str = in.readUTF();
+							LOGGER.debug(String.format("IP: %s, in.readUTF() = %s", socket.getInetAddress(), str));
 							// для всех служебных команд и личных сообщений
 							if (str.startsWith("/") || str.startsWith("@")) {
 								if ("/end".equalsIgnoreCase(str)){
 									// для оповещения клиента, т.к. без сервера клиент работать не должен
 									out.writeUTF("/serverClosed");
-									System.out.println("Client (" + socket.getInetAddress() + ") exited");
+//									System.out.println("Client (" + socket.getInetAddress() + ") exited");
 									break;
 								}
 								// вторая часть ДЗ. выполнение
@@ -111,30 +118,37 @@ public class ClientHandler {
 							} else {
 								server.broadcastMessage(this, nickname + ": " + str);
 							}
-							System.out.println("Client (" + socket.getInetAddress() + "): " + str);
+//							System.out.println("Client (" + socket.getInetAddress() + "): " + str);
 						}
 					}
 				} catch (IOException e) {
-					e.printStackTrace();
+					LOGGER.error(e.getMessage(), e);
 				} finally {
+					LOGGER.debug(String.format("IP: %s, nick: %s; Try to close client", socket.getInetAddress(), nickname));
+					// Закрываем in
 					try {
 						in.close();
 					} catch (IOException e) {
-						e.printStackTrace();
+						LOGGER.error(e.getMessage(), e);
 					}
+
+					// Закрываем out
 					try {
 						out.close();
 					} catch (IOException e) {
-						e.printStackTrace();
+						LOGGER.error(e.getMessage(), e);
 					}
+
+					// Закрываем socket
 					try {
 						socket.close();
 					} catch (IOException e) {
-						e.printStackTrace();
+						LOGGER.error(e.getMessage(), e);
 					}
 					if (server.isNickBusy(nickname)) {
 						server.unsubscribe(this);
 					}
+					LOGGER.info("Client closed");
 				}
 			});
 		} catch (IOException e) {
@@ -151,29 +165,34 @@ public class ClientHandler {
 
 		try {
 			out.writeUTF(msg);
+			LOGGER.info("out.writeUTF: " + msg);
 		} catch (IOException e) {
-			e.printStackTrace();
+			LOGGER.error(e.getMessage(), e);
 		}
 	}
 
 	public String getNickname() {
+		LOGGER.trace("Return nickname: " + nickname);
 		return nickname;
 	}
 
 	public void setNickname(String nickname) {
+		LOGGER.trace("Set nickname = " + nickname);
 		this.nickname = nickname;
 	}
 
 	public boolean checkBlackList(String nickname) {
+		LOGGER.trace(String.format("Is blacklist contains (%s)? -  %s", nickname, blackList.contains(nickname)));
 		return blackList.contains(nickname);
 	}
 
 	// 2. После загрузки клиента показывать ему последние 100 строк чата из БД
 	private void loadHistory() {
 		try {
+			LOGGER.trace("Try to load history for " + nickname);
 			out.writeUTF(AuthService.getHistory(nickname));
 		} catch (IOException e) {
-			e.printStackTrace();
+			LOGGER.error(e.getMessage(), e);
 		}
 	}
 }
